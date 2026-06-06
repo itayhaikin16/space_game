@@ -509,6 +509,8 @@ export default function Game() {
       stars: Array.from({ length: 50 }, () => new Star()),
       boss: null,
       score: 0,
+      laserTimer: 0,
+      laser: null,
     };
     setScore(0);
     setHealth(3);
