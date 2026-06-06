@@ -12,16 +12,19 @@ import {
   PowerUp, 
   Enemy, 
   Boss, 
-  Star 
+  Star,
+  Laser
 } from "./game-logic";
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(3);
-  const [gameStatus, setGameStatus] = useState<"Lobby" | "Playing" | "GameOver">("Lobby");
+  const [gameStatus, setGameStatus] = useState<"Identity" | "Lobby" | "Playing" | "GameOver">("Identity");
   const [powerupStatus, setPowerupStatus] = useState("");
-  const [leaderboard, setLeaderboard] = useState<{score: number, date: string}[]>([]);
+  const [leaderboard, setLeaderboard] = useState<{score: number, date: string, username?: string}[]>([]);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [username, setUsername] = useState("");
 
   const keys = useRef<Record<string, boolean>>({});
   const gameState = useRef({
@@ -33,22 +36,31 @@ export default function Game() {
     boss: null as Boss | null,
     score: 0,
     laserTimer: 0,
-    laser: null as { x: number, width: number, active: boolean, duration: number } | null,
+    laser: null as Laser | null,
+    sidewaysLaserTimer: 0,
+    sidewaysLaser: null as Laser | null,
     bossRespawnTimer: 0,
     vaporizerX: 0,
     vaporizerDir: 1,
   });
 
   useEffect(() => {
-    const savedScores = localStorage.getItem("space_defender_scores");
-    if (savedScores) {
-      setLeaderboard(JSON.parse(savedScores));
-    }
+    const fetchScores = async () => {
+      try {
+        const res = await fetch("/api/leaderboard");
+        const data = await res.json();
+        setLeaderboard(data);
+      } catch (e) {
+        console.error("Failed to fetch leaderboard", e);
+      }
+    };
+    fetchScores();
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keys.current[e.code] = true;
+      if (e.repeat) return;
       if (e.code === "Space" && gameStatus === "Playing") {
         const p = gameState.current.player;
         const centerX = p.x + p.width / 2;
@@ -148,32 +160,38 @@ export default function Game() {
       if (gameState.current.score >= 1000) {
         gameState.current.laserTimer++;
         if (gameState.current.laserTimer >= 600) {
-          gameState.current.laser = {
-            x: Math.random() * (SCREEN_WIDTH - 60),
-            width: 60,
-            active: false,
-            duration: 100
-          };
+          gameState.current.laser = new Laser('vertical', Math.random() * (SCREEN_WIDTH - 60));
           gameState.current.laserTimer = 0;
         }
       }
 
-      if (gameState.current.laser) {
-        gameState.current.laser.duration--;
-        if (gameState.current.laser.duration <= 40) {
-          gameState.current.laser.active = true;
+      if (gameState.current.score >= 10000) {
+        gameState.current.sidewaysLaserTimer++;
+        if (gameState.current.sidewaysLaserTimer >= 900) {
+          gameState.current.sidewaysLaser = new Laser('sideways', Math.random() * (SCREEN_HEIGHT - 60), 160);
+          gameState.current.sidewaysLaserTimer = 0;
         }
+      }
+
+      if (gameState.current.laser) {
+        gameState.current.laser.update();
         if (gameState.current.laser.duration <= 0) {
           gameState.current.laser = null;
-        }
-
-        if (gameState.current.laser && gameState.current.laser.active) {
-          if (player.x < gameState.current.laser.x + gameState.current.laser.width &&
-              player.x + player.width > gameState.current.laser.x) {
+        } else if (gameState.current.laser.collidesWith(player.x, player.y, player.width, player.height)) {
             player.health -= 1;
             setHealth(player.health);
             if (player.health <= 0) setGameStatus("GameOver");
-          }
+        }
+      }
+
+      if (gameState.current.sidewaysLaser) {
+        gameState.current.sidewaysLaser.update();
+        if (gameState.current.sidewaysLaser.duration <= 0) {
+          gameState.current.sidewaysLaser = null;
+        } else if (gameState.current.sidewaysLaser.collidesWith(player.x, player.y, player.width, player.height)) {
+            player.health -= 1;
+            setHealth(player.health);
+            if (player.health <= 0) setGameStatus("GameOver");
         }
       }
 
@@ -346,6 +364,11 @@ export default function Game() {
         ctx.fillRect(gameState.current.laser.x, 0, gameState.current.laser.width, SCREEN_HEIGHT);
       }
 
+      if (gameState.current.sidewaysLaser) {
+        ctx.fillStyle = gameState.current.sidewaysLaser.active ? "red" : "rgba(255, 0, 0, 0.3)";
+        ctx.fillRect(0, gameState.current.sidewaysLaser.y, SCREEN_WIDTH, gameState.current.sidewaysLaser.height);
+      }
+
       if (player.powerupActive === "vaporizer") {
         const vX = gameState.current.vaporizerX;
         ctx.fillStyle = "rgba(255, 0, 255, 0.4)";
@@ -376,6 +399,8 @@ export default function Game() {
       score: 0,
       laserTimer: 0,
       laser: null,
+      sidewaysLaserTimer: 0,
+      sidewaysLaser: null,
       bossRespawnTimer: 0,
       vaporizerX: 0,
       vaporizerDir: 1,
@@ -386,13 +411,20 @@ export default function Game() {
     setPowerupStatus("");
   };
 
-  const saveScore = (finalScore: number) => {
-    const newScore = { score: finalScore, date: new Date().toLocaleDateString() };
-    const updatedLeaderboard = [...leaderboard, newScore]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
-    setLeaderboard(updatedLeaderboard);
-    localStorage.setItem("space_defender_scores", JSON.stringify(updatedLeaderboard));
+  const saveScore = async (finalScore: number) => {
+    const newScore = { score: finalScore, username, date: new Date().toLocaleDateString() };
+    
+    try {
+      const res = await fetch("/api/leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newScore),
+      });
+      const updatedLeaderboard = await res.json();
+      setLeaderboard(updatedLeaderboard);
+    } catch (e) {
+      console.error("Failed to save score", e);
+    }
   };
 
   useEffect(() => {
@@ -403,32 +435,86 @@ export default function Game() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-mono">
+      {gameStatus === "Identity" && (
+        <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
+          <h1 className="text-6xl font-bold text-green-500 mb-4">SPACE DEFENDER</h1>
+          <div className="bg-gray-900 p-8 rounded-2xl border-4 border-green-500 w-96 flex flex-col items-center gap-6 shadow-[0_0_30px_rgba(34,197,94,0.3)]">
+            <h2 className="text-2xl font-bold text-green-400 uppercase tracking-widest">Pilot Identification</h2>
+            <input 
+              type="text" 
+              placeholder="Enter your callsign..." 
+              className="bg-black border-2 border-green-700 text-green-400 p-3 rounded-lg w-full text-center outline-none focus:border-green-400 transition-colors font-mono text-xl"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && username && setGameStatus("Lobby")}
+            />
+            <button
+              onClick={() => username && setGameStatus("Lobby")}
+              className="px-12 py-3 bg-green-600 hover:bg-green-500 text-white text-xl font-bold rounded-lg transition-all transform hover:scale-105 active:scale-95"
+            >
+              CONFIRM PILOT
+            </button>
+          </div>
+          <p className="text-gray-500 text-sm">Enter your name to join the global leaderboard</p>
+        </div>
+      )}
+
       {gameStatus === "Lobby" && (
         <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
           <h1 className="text-6xl font-bold text-green-500 mb-4">SPACE DEFENDER</h1>
           
-          <div className="bg-gray-900 p-6 rounded-xl border-2 border-green-500 w-80">
-            <h2 className="text-2xl text-center mb-4 font-bold text-green-400">LEADERBOARD</h2>
-            <div className="space-y-2">
+          <div className="flex gap-4">
+            <button
+              onClick={startGame}
+              className="px-12 py-4 bg-green-600 hover:bg-green-500 text-white text-2xl font-bold rounded-full transition-all transform hover:scale-110 shadow-[0_0_20px_rgba(34,197,94,0.5)]"
+            >
+              LAUNCH GAME
+            </button>
+            <button
+              onClick={() => setIsLeaderboardOpen(true)}
+              className="px-12 py-4 bg-gray-700 hover:bg-gray-600 text-white text-2xl font-bold rounded-full transition-all transform hover:scale-110 border-2 border-gray-500"
+            >
+              LEADERBOARD
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLeaderboardOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm">
+          <div className="bg-gray-900 p-8 rounded-2xl border-4 border-green-500 w-96 relative animate-in zoom-in duration-300">
+            <button 
+              onClick={() => setIsLeaderboardOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl font-bold"
+            >
+              ✕
+            </button>
+            <h2 className="text-3xl text-center mb-6 font-bold text-green-400 uppercase tracking-widest">Global Top 10</h2>
+            <div className="space-y-3">
               {leaderboard.length === 0 ? (
-                <p className="text-center text-gray-500">No scores yet!</p>
+                <p className="text-center text-gray-500 py-4">No scores yet!</p>
               ) : (
                 leaderboard.map((entry, idx) => (
-                  <div key={idx} className="flex justify-between border-b border-gray-800 py-1">
-                    <span>{idx + 1}. {entry.date}</span>
-                    <span className="text-green-400">{entry.score}</span>
+                  <div key={idx} className="flex justify-between items-center border-b border-gray-800 py-2 px-2">
+                    <div className="flex gap-3">
+                      <span className="text-green-500 font-bold">{idx + 1}.</span>
+                      <span className="truncate max-w-[120px]">{entry.username || "Anonymous"}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-green-400 font-bold">{entry.score}</span>
+                      <span className="text-[10px] text-gray-500">{entry.date}</span>
+                    </div>
                   </div>
                 ))
               )}
             </div>
+            <button
+              onClick={() => setIsLeaderboardOpen(false)}
+              className="mt-8 w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors"
+            >
+              CLOSE
+            </button>
           </div>
-
-          <button
-            onClick={startGame}
-            className="px-12 py-4 bg-green-600 hover:bg-green-500 text-white text-2xl font-bold rounded-full transition-all transform hover:scale-110 shadow-[0_0_20px_rgba(34,197,94,0.5)]"
-          >
-            LAUNCH GAME
-          </button>
         </div>
       )}
 
@@ -458,7 +544,7 @@ export default function Game() {
                 </button>
                 <button
                   onClick={() => setGameStatus("Lobby")}
-                  className="px-8 py-3 bg-gray-600 hover:bg-gray-500 text-white text-xl rounded-lg transition-colors"
+                  className="px-8 py-3 bg-green-600 hover:bg-green-500 text-white text-xl font-bold rounded-lg transition-all transform hover:scale-110 shadow-[0_0_15px_rgba(34,197,94,0.5)]"
                 >
                   LOBBY
                 </button>
