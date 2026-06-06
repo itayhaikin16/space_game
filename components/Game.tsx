@@ -181,7 +181,7 @@ class Boss {
   y: number = -100;
   width: number = 100;
   height: number = 60;
-  health: number = 50;
+  health: number = 500;
   speed: number = 2;
   direction: number = 1;
   shootTimer: number = 0;
@@ -548,7 +548,7 @@ export default function Game() {
         const barHeight = 10;
         const x = boss.x + (boss.width - barWidth) / 2;
         const y = boss.y - 20;
-        const currentHealthWidth = (boss.health / 50) * barWidth;
+        const currentHealthWidth = (boss.health / 500) * barWidth;
         
         ctx.fillStyle = "gray";
         ctx.fillRect(x, y, barWidth, barHeight);
