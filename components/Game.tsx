@@ -10,6 +10,7 @@ const BULLET_COLOR = "#FFFF00";
 const BG_COLOR = "#0A0A1E";
 const POWERUP_COLOR_TRIPLE = "#00C8FF";
 const POWERUP_COLOR_HEALTH = "#00FF64";
+const POWERUP_COLOR_VAPORIZER = "#FF00FF"; // Pink for Vaporizer
 const ENEMY_BULLET_COLOR = "#FF00FF"; // Magenta for boss bullets
 
 class Player {
@@ -28,10 +29,10 @@ class Player {
   }
 
   update(keys: Record<string, boolean>) {
-    if (keys["ArrowLeft"] && this.x > 0) this.x -= this.speed;
-    if (keys["ArrowRight"] && this.x + this.width < SCREEN_WIDTH) this.x += this.speed;
-    if (keys["ArrowUp"] && this.y > 0) this.y -= this.speed;
-    if (keys["ArrowDown"] && this.y + this.height < SCREEN_HEIGHT) this.y += this.speed;
+    if ((keys["ArrowLeft"] || keys["KeyA"]) && this.x > 0) this.x -= this.speed;
+    if ((keys["ArrowRight"] || keys["KeyD"]) && this.x + this.width < SCREEN_WIDTH) this.x += this.speed;
+    if ((keys["ArrowUp"] || keys["KeyW"]) && this.y > 0) this.y -= this.speed;
+    if ((keys["ArrowDown"] || keys["KeyS"]) && this.y + this.height < SCREEN_HEIGHT) this.y += this.speed;
 
     if (this.powerupActive) {
       this.powerupTimer--;
@@ -102,10 +103,10 @@ class PowerUp {
   y: number;
   width: number = 20;
   height: number = 20;
-  type: "triple" | "health";
+  type: "triple" | "health" | "vaporizer";
   speed: number = 3;
 
-  constructor(x: number, y: number, type: "triple" | "health") {
+  constructor(x: number, y: number, type: "triple" | "health" | "vaporizer") {
     this.x = x - this.width / 2;
     this.y = y - this.height / 2;
     this.type = type;
@@ -116,7 +117,8 @@ class PowerUp {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = this.type === "triple" ? POWERUP_COLOR_TRIPLE : POWERUP_COLOR_HEALTH;
+    ctx.fillStyle = this.type === "triple" ? POWERUP_COLOR_TRIPLE : 
+                    this.type === "health" ? POWERUP_COLOR_HEALTH : POWERUP_COLOR_VAPORIZER;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
@@ -179,7 +181,7 @@ class Boss {
   y: number = -100;
   width: number = 100;
   height: number = 60;
-  health: number = 20;
+  health: number = 50;
   speed: number = 2;
   direction: number = 1;
   shootTimer: number = 0;
@@ -256,6 +258,9 @@ export default function Game() {
     score: 0,
     laserTimer: 0,
     laser: null as { x: number, width: number, active: boolean, duration: number } | null,
+    bossRespawnTimer: 0,
+    vaporizerX: 0,
+    vaporizerDir: 1,
   });
 
   useEffect(() => {
@@ -322,6 +327,48 @@ export default function Game() {
       powerups.forEach(p => p.update());
       stars.forEach(s => s.update());
 
+      // Vaporizer logic (Windshield Wiper effect)
+      if (player.powerupActive === "vaporizer") {
+        gameState.current.vaporizerX += 12 * gameState.current.vaporizerDir;
+        if (gameState.current.vaporizerX <= 0) {
+          gameState.current.vaporizerX = 0;
+          gameState.current.vaporizerDir = 1;
+        } else if (gameState.current.vaporizerX >= SCREEN_WIDTH) {
+          gameState.current.vaporizerX = SCREEN_WIDTH;
+          gameState.current.vaporizerDir = -1;
+        }
+
+        const beamHalfWidth = 20;
+        const beamLeft = gameState.current.vaporizerX - beamHalfWidth;
+        const beamRight = gameState.current.vaporizerX + beamHalfWidth;
+
+        // Vaporize enemies
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const e = enemies[i];
+          if (beamLeft < e.x + e.width && beamRight > e.x) {
+            enemies.splice(i, 1);
+            gameState.current.score += 10;
+            setScore(gameState.current.score);
+            
+            if (Math.random() < 0.2) {
+              const type = Math.random() < 0.5 ? "triple" : "health";
+              powerups.push(new PowerUp(e.x + e.width / 2, e.y + e.height / 2, type));
+            }
+            
+            const speedMod = 1 + Math.min(Math.floor(gameState.current.score / 1000), 2);
+            enemies.push(new Enemy(speedMod));
+          }
+        }
+
+        // Vaporize boss
+        if (gameState.current.boss) {
+          const b = gameState.current.boss;
+          if (beamLeft < b.x + b.width && beamRight > b.x) {
+            b.health -= 2; // Stronger damage while beam is over boss
+          }
+        }
+      }
+
       if (gameState.current.score >= 1000) {
         gameState.current.laserTimer++;
         if (gameState.current.laserTimer >= 600) {
@@ -354,8 +401,12 @@ export default function Game() {
         }
       }
 
-      if (gameState.current.score >= 2000 && !gameState.current.boss) {
-        gameState.current.boss = new Boss();
+      if (!gameState.current.boss && gameState.current.score >= 2000) {
+        if (gameState.current.bossRespawnTimer > 0) {
+          gameState.current.bossRespawnTimer--;
+        } else {
+          gameState.current.boss = new Boss();
+        }
       }
 
       if (gameState.current.boss) {
@@ -377,11 +428,16 @@ export default function Game() {
             b.y + b.height > gameState.current.boss!.y) {
           
           bullets.splice(i, 1);
-          gameState.current.boss!.health--;
+          gameState.current.boss!.health -= 10;
           if (gameState.current.boss!.health <= 0) {
             gameState.current.score += 500;
             setScore(gameState.current.score);
+            
+            // Drop pink vaporizer orb
+            powerups.push(new PowerUp(gameState.current.boss!.x + gameState.current.boss!.width / 2, gameState.current.boss!.y + gameState.current.boss!.height / 2, "vaporizer"));
+            
             gameState.current.boss = null;
+            gameState.current.bossRespawnTimer = 7200; // 2 minutes respawn
           }
           continue;
         }
@@ -429,6 +485,9 @@ export default function Game() {
           } else if (p.type === "health") {
             player.health++;
             setHealth(player.health);
+          } else if (p.type === "vaporizer") {
+            player.powerupActive = "vaporizer";
+            player.powerupTimer = 480; // 8 seconds at 60fps
           }
           powerups.splice(i, 1);
         }
@@ -461,7 +520,7 @@ export default function Game() {
             player.y + player.height > b.y) {
           
           bullets.splice(i, 1);
-          player.health -= 2;
+          player.health -= 1;
           setHealth(player.health);
           if (player.health <= 0) {
             setGameStatus("GameOver");
@@ -482,11 +541,45 @@ export default function Game() {
       
       if (gameState.current.boss) {
         gameState.current.boss.draw(ctx);
+        
+        // Draw Boss Health Bar
+        const boss = gameState.current.boss;
+        const barWidth = 100;
+        const barHeight = 10;
+        const x = boss.x + (boss.width - barWidth) / 2;
+        const y = boss.y - 20;
+        const currentHealthWidth = (boss.health / 50) * barWidth;
+        
+        ctx.fillStyle = "gray";
+        ctx.fillRect(x, y, barWidth, barHeight);
+        ctx.fillStyle = "red";
+        ctx.fillRect(x, y, currentHealthWidth, barHeight);
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, barWidth, barHeight);
+
+        // Boss Health Number
+        ctx.fillStyle = "white";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(`HP: ${Math.max(0, Math.ceil(boss.health))}`, x + barWidth / 2, y - 5);
       }
 
       if (gameState.current.laser) {
         ctx.fillStyle = gameState.current.laser.active ? "red" : "rgba(255, 0, 0, 0.3)";
         ctx.fillRect(gameState.current.laser.x, 0, gameState.current.laser.width, SCREEN_HEIGHT);
+      }
+
+      if (player.powerupActive === "vaporizer") {
+        const vX = gameState.current.vaporizerX;
+        ctx.fillStyle = "rgba(255, 0, 255, 0.4)";
+        ctx.fillRect(vX - 20, 0, 40, SCREEN_HEIGHT);
+        ctx.strokeStyle = "#FF00FF";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(vX, 0);
+        ctx.lineTo(vX, SCREEN_HEIGHT);
+        ctx.stroke();
       }
 
       animationFrameId = requestAnimationFrame(gameLoop);
@@ -507,6 +600,9 @@ export default function Game() {
       score: 0,
       laserTimer: 0,
       laser: null,
+      bossRespawnTimer: 0,
+      vaporizerX: 0,
+      vaporizerDir: 1,
     };
     setScore(0);
     setHealth(3);
