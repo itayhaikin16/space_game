@@ -241,8 +241,9 @@ export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(3);
-  const [gameOver, setGameOver] = useState(false);
+  const [gameStatus, setGameStatus] = useState<"Lobby" | "Playing" | "GameOver">("Lobby");
   const [powerupStatus, setPowerupStatus] = useState("");
+  const [leaderboard, setLeaderboard] = useState<{score: number, date: string}[]>([]);
 
   const keys = useRef<Record<string, boolean>>({});
   const gameState = useRef({
@@ -258,9 +259,16 @@ export default function Game() {
   });
 
   useEffect(() => {
+    const savedScores = localStorage.getItem("space_defender_scores");
+    if (savedScores) {
+      setLeaderboard(JSON.parse(savedScores));
+    }
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keys.current[e.code] = true;
-      if (e.code === "Space" && !gameOver) {
+      if (e.code === "Space" && gameStatus === "Playing") {
         const p = gameState.current.player;
         const centerX = p.x + p.width / 2;
         const centerY = p.y;
@@ -289,7 +297,7 @@ export default function Game() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [gameOver]);
+  }, [gameStatus]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -297,15 +305,15 @@ export default function Game() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Initialize enemies
-    gameState.current.enemies = Array.from({ length: 8 }, () => new Enemy());
+    if (gameStatus === "Playing") {
+      gameState.current.enemies = Array.from({ length: 8 }, () => new Enemy());
+    }
 
     let animationFrameId: number;
 
     const gameLoop = () => {
-      if (gameOver) return;
+      if (gameStatus !== "Playing") return;
 
-      // Update
       const { player, bullets, enemies, powerups, stars } = gameState.current;
 
       player.update(keys.current);
@@ -314,15 +322,14 @@ export default function Game() {
       powerups.forEach(p => p.update());
       stars.forEach(s => s.update());
 
-      // Laser logic
       if (gameState.current.score >= 1000) {
         gameState.current.laserTimer++;
-        if (gameState.current.laserTimer >= 600) { // 10 seconds
+        if (gameState.current.laserTimer >= 600) {
           gameState.current.laser = {
             x: Math.random() * (SCREEN_WIDTH - 60),
             width: 60,
             active: false,
-            duration: 100 // Total life of laser event
+            duration: 100
           };
           gameState.current.laserTimer = 0;
         }
@@ -342,12 +349,11 @@ export default function Game() {
               player.x + player.width > gameState.current.laser.x) {
             player.health -= 1;
             setHealth(player.health);
-            if (player.health <= 0) setGameOver(true);
+            if (player.health <= 0) setGameStatus("GameOver");
           }
         }
       }
 
-      // Boss spawn and update
       if (gameState.current.score >= 2000 && !gameState.current.boss) {
         gameState.current.boss = new Boss();
       }
@@ -356,7 +362,6 @@ export default function Game() {
         gameState.current.boss.update(bullets);
       }
 
-      // Bullet collisions
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         if (b.y < 0 || b.y > SCREEN_HEIGHT) {
@@ -364,7 +369,6 @@ export default function Game() {
           continue;
         }
 
-        // Boss collision
         if (gameState.current.boss && 
             b.color === BULLET_COLOR &&
             b.x < gameState.current.boss!.x + gameState.current.boss!.width &&
@@ -395,13 +399,11 @@ export default function Game() {
             gameState.current.score += 10;
             setScore(gameState.current.score);
 
-            // Drop powerup
             if (Math.random() < 0.2) {
               const type = Math.random() < 0.5 ? "triple" : "health";
               powerups.push(new PowerUp(e.x + e.width / 2, e.y + e.height / 2, type));
             }
 
-            // Replace enemy
             const speedMod = 1 + Math.min(Math.floor(gameState.current.score / 1000), 2);
             enemies[j] = new Enemy(speedMod);
             break;
@@ -409,7 +411,6 @@ export default function Game() {
         }
       }
 
-      // Powerup collisions
       for (let i = powerups.length - 1; i >= 0; i--) {
         const p = powerups[i];
         if (p.y > SCREEN_HEIGHT) {
@@ -433,7 +434,6 @@ export default function Game() {
         }
       }
 
-      // Enemy collisions with player
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
         if (
@@ -444,16 +444,14 @@ export default function Game() {
         ) {
           player.health--;
           setHealth(player.health);
-          // Reset enemy
           enemies[i] = new Enemy(1 + Math.min(Math.floor(gameState.current.score / 1000), 2));
           if (player.health <= 0) {
-            setGameOver(true);
+            setGameStatus("GameOver");
           }
           break;
         }
       }
 
-      // Check for boss bullets hitting player
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         if (b.color === ENEMY_BULLET_COLOR &&
@@ -466,15 +464,13 @@ export default function Game() {
           player.health -= 2;
           setHealth(player.health);
           if (player.health <= 0) {
-            setGameOver(true);
+            setGameStatus("GameOver");
           }
         }
       }
 
-      // Update UI state
       setPowerupStatus(player.powerupActive === "triple" ? `TRIPLE (${Math.ceil(player.powerupTimer / 60)}s)` : "");
 
-      // Draw
       ctx.fillStyle = BG_COLOR;
       ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -498,9 +494,9 @@ export default function Game() {
 
     animationFrameId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [gameOver]);
+  }, [gameStatus]);
 
-  const resetGame = () => {
+  const startGame = () => {
     gameState.current = {
       player: new Player(),
       bullets: [],
@@ -514,40 +510,97 @@ export default function Game() {
     };
     setScore(0);
     setHealth(3);
-    setGameOver(false);
+    setGameStatus("Playing");
     setPowerupStatus("");
   };
 
+  const saveScore = (finalScore: number) => {
+    const newScore = { score: finalScore, date: new Date().toLocaleDateString() };
+    const updatedLeaderboard = [...leaderboard, newScore]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    setLeaderboard(updatedLeaderboard);
+    localStorage.setItem("space_defender_scores", JSON.stringify(updatedLeaderboard));
+  };
+
+  useEffect(() => {
+    if (gameStatus === "GameOver") {
+      saveScore(score);
+    }
+  }, [gameStatus]);
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-mono">
-      <div className="relative">
-        <canvas
-          ref={canvasRef}
-          width={SCREEN_WIDTH}
-          height={SCREEN_HEIGHT}
-          className="border-4 border-gray-700 shadow-2xl"
-        />
-        
-        <div className="absolute top-4 left-4 text-xl">
-          Score: {score} | Health: {health} {powerupStatus && `| ${powerupStatus}`}
-        </div>
-
-        {gameOver && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-70">
-            <h1 className="text-6xl text-red-600 font-bold mb-4">GAME OVER</h1>
-            <p className="text-2xl mb-8">Score: {score}</p>
-            <button
-              onClick={resetGame}
-              className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xl rounded-lg transition-colors"
-            >
-              CLICK TO PLAY AGAIN
-            </button>
+      {gameStatus === "Lobby" && (
+        <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
+          <h1 className="text-6xl font-bold text-green-500 mb-4">SPACE DEFENDER</h1>
+          
+          <div className="bg-gray-900 p-6 rounded-xl border-2 border-green-500 w-80">
+            <h2 className="text-2xl text-center mb-4 font-bold text-green-400">LEADERBOARD</h2>
+            <div className="space-y-2">
+              {leaderboard.length === 0 ? (
+                <p className="text-center text-gray-500">No scores yet!</p>
+              ) : (
+                leaderboard.map((entry, idx) => (
+                  <div key={idx} className="flex justify-between border-b border-gray-800 py-1">
+                    <span>{idx + 1}. {entry.date}</span>
+                    <span className="text-green-400">{entry.score}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        )}
-      </div>
-      <div className="mt-4 text-gray-400">
-        Use Arrow Keys to move and Space to shoot
-      </div>
+
+          <button
+            onClick={startGame}
+            className="px-12 py-4 bg-green-600 hover:bg-green-500 text-white text-2xl font-bold rounded-full transition-all transform hover:scale-110 shadow-[0_0_20px_rgba(34,197,94,0.5)]"
+          >
+            LAUNCH GAME
+          </button>
+        </div>
+      )}
+
+      {(gameStatus === "Playing" || gameStatus === "GameOver") && (
+        <div className="relative">
+          <canvas
+            ref={canvasRef}
+            width={SCREEN_WIDTH}
+            height={SCREEN_HEIGHT}
+            className="border-4 border-gray-700 shadow-2xl"
+          />
+          
+          <div className="absolute top-4 left-4 text-xl">
+            Score: {score} | Health: {health} {powerupStatus && `| ${powerupStatus}`}
+          </div>
+
+          {gameStatus === "GameOver" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-70">
+              <h1 className="text-6xl text-red-600 font-bold mb-4">GAME OVER</h1>
+              <p className="text-2xl mb-8">Final Score: {score}</p>
+              <div className="flex gap-4">
+                <button
+                  onClick={startGame}
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white text-xl rounded-lg transition-colors"
+                >
+                  PLAY AGAIN
+                </button>
+                <button
+                  onClick={() => setGameStatus("Lobby")}
+                  className="px-8 py-3 bg-gray-600 hover:bg-gray-500 text-white text-xl rounded-lg transition-colors"
+                >
+                  LOBBY
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {gameStatus === "Playing" && (
+        <div className="mt-4 text-gray-400 text-sm">
+          Use Arrow Keys to move and Space to shoot
+        </div>
+      )}
     </div>
   );
 }
