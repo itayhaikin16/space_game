@@ -489,7 +489,19 @@ export default function Game() {
             >
               ✕
             </button>
-            <h2 className="text-3xl text-center mb-6 font-bold text-green-400 uppercase tracking-widest">Global Top 10</h2>
+            <div className="flex justify-between items-center mb-6 font-bold text-green-400 uppercase tracking-widest pr-4">
+              <h2>Global Top 10</h2>
+              <button 
+                onClick={async () => {
+                  const res = await fetch("/api/leaderboard");
+                  const data = await res.json();
+                  setLeaderboard(data);
+                }}
+                className="text-xs bg-green-900 hover:bg-green-800 text-green-300 px-2 py-1 rounded border border-green-700 transition-colors"
+              >
+                REFRESH
+              </button>
+            </div>
             <div className="space-y-3">
               {leaderboard.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">No scores yet!</p>
