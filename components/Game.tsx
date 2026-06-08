@@ -17,6 +17,7 @@ import {
   Asteroid
 } from "./game-logic";
 import { initGameState, updateGame, drawGame, GameState } from "./game-engine";
+import Starfield from "./Starfield";
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,6 +26,7 @@ export default function Game() {
   const [gameStatus, setGameStatus] = useState<"Identity" | "Lobby" | "Playing" | "GameOver">("Identity");
   const [gameMode, setGameMode] = useState<"Shooter" | "Survival">("Shooter");
   const [powerupStatus, setPowerupStatus] = useState("");
+  const [warpFactor, setWarpFactor] = useState(1);
   const [leaderboard, setLeaderboard] = useState<{score: number, date: string, username?: string}[]>([]);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [username, setUsername] = useState("");
@@ -109,6 +111,50 @@ export default function Game() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [gameStatus, gameMode]);
 
+  const handleConfirmPilot = () => {
+    if (!username) return;
+    
+    // Quick dip to create anticipation without feeling like a full stop
+    const dipInterval = setInterval(() => {
+      setWarpFactor(prev => {
+        const next = prev - 0.05;
+        if (next <= 0.7) {
+          clearInterval(dipInterval);
+          triggerWarp();
+          return 0.7;
+        }
+        return next;
+      });
+    }, 16);
+  };
+
+  const triggerWarp = () => {
+    // Explosive acceleration
+    const warpInterval = setInterval(() => {
+      setWarpFactor(prev => prev + 8);
+    }, 16);
+    
+    setTimeout(() => {
+      clearInterval(warpInterval);
+      setWarpFactor(100);
+      setGameStatus("Lobby");
+      
+      // Rapidly return to normal speed for the lobby
+      setTimeout(() => {
+        const decelerateInterval = setInterval(() => {
+          setWarpFactor(prev => {
+            const next = prev - 10;
+            if (next <= 1) {
+              clearInterval(decelerateInterval);
+              return 1;
+            }
+            return next;
+          });
+        }, 16);
+      }, 300);
+    }, 800);
+  };
+
   const startGame = (mode: "Shooter" | "Survival") => {
     setGameMode(mode);
     const state = initGameState();
@@ -144,7 +190,12 @@ export default function Game() {
   }, [gameStatus]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-mono">
+    <div className={`flex flex-col items-center justify-center min-h-screen text-white font-mono overflow-hidden ${
+      (gameStatus === "Playing" || gameStatus === "GameOver") ? "bg-black" : ""
+    }`}>
+      {(gameStatus === "Identity" || gameStatus === "Lobby") && (
+        <Starfield speedMultiplier={warpFactor} />
+      )}
       {gameStatus === "Identity" && (
         <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
           <h1 className="text-6xl font-bold text-green-500 mb-4">SPACE DEFENDER</h1>
@@ -156,10 +207,10 @@ export default function Game() {
               className="bg-black border-2 border-green-700 text-green-400 p-3 rounded-lg w-full text-center outline-none focus:border-green-400 transition-colors font-mono text-xl"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && username && setGameStatus("Lobby")}
+              onKeyDown={(e) => e.key === 'Enter' && username && handleConfirmPilot()}
             />
             <button
-              onClick={() => username && setGameStatus("Lobby")}
+              onClick={handleConfirmPilot}
               className="px-12 py-3 bg-green-600 hover:bg-green-500 text-white text-xl font-bold rounded-lg transition-all transform hover:scale-105 active:scale-95"
             >
               CONFIRM PILOT
