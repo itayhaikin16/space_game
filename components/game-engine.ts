@@ -33,7 +33,7 @@ export interface GameState {
   lastOrbSpawnDistance: number;
 }
 
-export function initGameState() {
+export function initGameState(): GameState {
   return {
     player: new Player(),
     bullets: [],
