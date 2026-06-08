@@ -99,10 +99,10 @@ export class PowerUp {
   y: number;
   width: number = 20;
   height: number = 20;
-  type: "triple" | "health" | "vaporizer";
+  type: "triple" | "health" | "superhealth" | "vaporizer";
   speed: number = 3;
 
-  constructor(x: number, y: number, type: "triple" | "health" | "vaporizer") {
+  constructor(x: number, y: number, type: "triple" | "health" | "superhealth" | "vaporizer") {
     this.x = x - this.width / 2;
     this.y = y - this.height / 2;
     this.type = type;
@@ -114,7 +114,8 @@ export class PowerUp {
 
   draw(ctx: CanvasRenderingContext2D) {
     ctx.fillStyle = this.type === "triple" ? POWERUP_COLOR_TRIPLE : 
-                    this.type === "health" ? POWERUP_COLOR_HEALTH : POWERUP_COLOR_VAPORIZER;
+                    this.type === "health" ? POWERUP_COLOR_HEALTH : 
+                    this.type === "superhealth" ? "#006400" : POWERUP_COLOR_VAPORIZER;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
@@ -273,5 +274,53 @@ export class Laser {
       playerY < this.y + this.height &&
       playerY + playerH > this.y
     );
+  }
+}
+
+export class Asteroid {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  rotation: number = 0;
+  rotationSpeed: number = (Math.random() - 0.5) * 0.1;
+  size: number;
+
+  constructor(speedModifier = 1) {
+    this.size = Math.random() * 30 + 20;
+    this.width = this.size;
+    this.height = this.size;
+    this.x = Math.random() * (SCREEN_WIDTH - this.width);
+    this.y = Math.random() * -200 - 50;
+    this.speed = (Math.random() * 2 + 2) * speedModifier;
+  }
+
+  update(speedMod = 1) {
+    this.y += this.speed * speedMod;
+    this.rotation += this.rotationSpeed;
+  }
+
+  draw(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+    ctx.rotate(this.rotation);
+    ctx.fillStyle = "#8B4513"; 
+    ctx.strokeStyle = "#5D2E0D";
+    ctx.lineWidth = 2;
+    
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const r = (this.size / 2) * (0.8 + Math.random() * 0.4);
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 }
