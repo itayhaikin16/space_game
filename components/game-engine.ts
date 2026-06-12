@@ -11,8 +11,18 @@ import {
   Boss, 
   Star, 
   Laser, 
-  Asteroid 
+  Asteroid,
+  PLAYER_SKINS,
+  ASTEROID_SKINS,
+  PlayerSkinKey,
+  AsteroidSkinKey
 } from './game-logic';
+
+export interface Notification {
+  text: string;
+  duration: number;
+  color: string;
+}
 
 export interface GameState {
   player: Player;
@@ -31,6 +41,9 @@ export interface GameState {
   vaporizerX: number;
   vaporizerDir: number;
   lastOrbSpawnDistance: number;
+  notifications: Notification[];
+  playerSkin: PlayerSkinKey;
+  asteroidSkin: AsteroidSkinKey;
 }
 
 export function initGameState(): GameState {
@@ -51,6 +64,9 @@ export function initGameState(): GameState {
     vaporizerX: 0,
     vaporizerDir: 1,
     lastOrbSpawnDistance: 0,
+    notifications: [],
+    playerSkin: 'default',
+    asteroidSkin: 'default',
   };
 }
 
@@ -62,9 +78,64 @@ export function updateGame(state: GameState, keys: Record<string, boolean>, mode
   player.update(keys);
   stars.forEach(s => s.update());
   powerups.forEach(p => p.update());
+  bullets.forEach(b => b.update());
+
+  // Update notifications
+  state.notifications = state.notifications.filter(n => {
+    n.duration--;
+    return n.duration > 0;
+  });
+
+  // Shared Hazards: Lasers (Both modes)
+  if (state.score >= 1000) {
+    state.laserTimer++;
+    if (state.laserTimer >= 600) {
+      state.laser = new Laser('vertical', Math.random() * (SCREEN_WIDTH - 60));
+      state.laserTimer = 0;
+    }
+  }
+  if (state.score >= 10000) {
+    state.sidewaysLaserTimer++;
+    if (state.sidewaysLaserTimer >= 900) {
+      state.sidewaysLaser = new Laser('sideways', Math.random() * (SCREEN_HEIGHT - 60), 160);
+      state.sidewaysLaserTimer = 0;
+    }
+  }
+
+  if (state.laser) {
+    state.laser.update();
+    if (state.laser.duration <= 0) state.laser = null;
+    else if (state.laser.collidesWith(player.x, player.y, player.width, player.height)) {
+      player.health -= 1;
+      onHealthChange(player.health);
+      if (player.health <= 0) onGameOver();
+    }
+  }
+  if (state.sidewaysLaser) {
+    state.sidewaysLaser.update();
+    if (state.sidewaysLaser.duration <= 0) state.sidewaysLaser = null;
+    else if (state.sidewaysLaser.collidesWith(player.x, player.y, player.width, player.height)) {
+      player.health -= 1;
+      onHealthChange(player.health);
+      if (player.health <= 0) onGameOver();
+    }
+  }
+
+  // Shared Hazards: Boss (Both modes)
+  if (!state.boss && state.score >= 2000) {
+    if (state.bossRespawnTimer > 0) state.bossRespawnTimer--;
+    else {
+      state.boss = new Boss();
+      state.notifications.push({
+        text: "boss is here",
+        duration: 180,
+        color: "red"
+      });
+    }
+  }
+  if (state.boss) state.boss.update(bullets);
 
   if (mode === "Shooter") {
-    bullets.forEach(b => b.update());
     enemies.forEach(e => e.update());
 
     if (player.powerupActive === "vaporizer") {
@@ -101,82 +172,6 @@ export function updateGame(state: GameState, keys: Record<string, boolean>, mode
       }
     }
 
-    if (state.score >= 1000) {
-      state.laserTimer++;
-      if (state.laserTimer >= 600) {
-        state.laser = new Laser('vertical', Math.random() * (SCREEN_WIDTH - 60));
-        state.laserTimer = 0;
-      }
-    }
-    if (state.score >= 10000) {
-      state.sidewaysLaserTimer++;
-      if (state.sidewaysLaserTimer >= 900) {
-        state.sidewaysLaser = new Laser('sideways', Math.random() * (SCREEN_HEIGHT - 60), 160);
-        state.sidewaysLaserTimer = 0;
-      }
-    }
-
-    if (state.laser) {
-      state.laser.update();
-      if (state.laser.duration <= 0) state.laser = null;
-      else if (state.laser.collidesWith(player.x, player.y, player.width, player.height)) {
-        player.health -= 1;
-        onHealthChange(player.health);
-        if (player.health <= 0) onGameOver();
-      }
-    }
-    if (state.sidewaysLaser) {
-      state.sidewaysLaser.update();
-      if (state.sidewaysLaser.duration <= 0) state.sidewaysLaser = null;
-      else if (state.sidewaysLaser.collidesWith(player.x, player.y, player.width, player.height)) {
-        player.health -= 1;
-        onHealthChange(player.health);
-        if (player.health <= 0) onGameOver();
-      }
-    }
-
-    if (!state.boss && state.score >= 2000) {
-      if (state.bossRespawnTimer > 0) state.bossRespawnTimer--;
-      else state.boss = new Boss();
-    }
-    if (state.boss) state.boss.update(bullets);
-
-    for (let i = bullets.length - 1; i >= 0; i--) {
-      const b = bullets[i];
-      if (b.y < 0 || b.y > SCREEN_HEIGHT) { bullets.splice(i, 1); continue; }
-      if (state.boss && b.color === BULLET_COLOR && 
-          b.x < state.boss!.x + state.boss!.width &&
-          b.x + b.width > state.boss!.x &&
-          b.y < state.boss!.y + state.boss!.height &&
-          b.y + b.height > state.boss!.y) {
-        bullets.splice(i, 1);
-        state.boss!.health -= 10;
-        if (state.boss!.health <= 0) {
-          state.score += 500;
-          onScoreChange(state.score);
-          powerups.push(new PowerUp(state.boss!.x + state.boss!.width / 2, state.boss!.y + state.boss!.height / 2, "vaporizer"));
-          state.boss = null;
-          state.bossRespawnTimer = 7200;
-        }
-        continue;
-      }
-      for (let j = enemies.length - 1; j >= 0; j--) {
-        const e = enemies[j];
-        if (b.color === BULLET_COLOR && b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
-          bullets.splice(i, 1);
-          state.score += 10;
-          onScoreChange(state.score);
-          if (Math.random() < 0.2) {
-            const type = Math.random() < 0.5 ? "triple" : "health";
-            powerups.push(new PowerUp(e.x + e.width / 2, e.y + e.height / 2, type));
-          }
-          const speedMod = 1 + Math.min(Math.floor(state.score / 1000), 2);
-          enemies[j] = new Enemy(speedMod);
-          break;
-        }
-      }
-    }
-
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
       if (player.x < e.x + e.width && player.x + player.width > e.x && player.y < e.y + e.height && player.y + player.height > e.y) {
@@ -185,15 +180,6 @@ export function updateGame(state: GameState, keys: Record<string, boolean>, mode
         enemies[i] = new Enemy(1 + Math.min(Math.floor(state.score / 1000), 2));
         if (player.health <= 0) onGameOver();
         break;
-      }
-    }
-    for (let i = bullets.length - 1; i >= 0; i--) {
-      const b = bullets[i];
-      if (b.color === ENEMY_BULLET_COLOR && player.x < b.x + b.width && player.x + player.width > b.x && player.y < b.y + b.height && player.y + player.height > b.y) {
-        bullets.splice(i, 1);
-        player.health -= 1;
-        onHealthChange(player.health);
-        if (player.health <= 0) onGameOver();
       }
     }
   } else {
@@ -223,7 +209,6 @@ export function updateGame(state: GameState, keys: Record<string, boolean>, mode
 
     if (state.score - state.lastOrbSpawnDistance >= 50) {
       const type = Math.random() < 0.95 ? "health" : "superhealth";
-      // Spawn at a random X, and a random Y between -50 and -10 to vary the entry time
       powerups.push(new PowerUp(Math.random() * (SCREEN_WIDTH - 40) + 20, Math.random() * -40 - 10, type));
       state.lastOrbSpawnDistance = state.score;
     }
@@ -232,6 +217,59 @@ export function updateGame(state: GameState, keys: Record<string, boolean>, mode
     onScoreChange(Math.floor(state.score));
   }
 
+  // Process Bullets (Shared: Boss damage and Enemy damage)
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    if (b.y < 0 || b.y > SCREEN_HEIGHT) { bullets.splice(i, 1); continue; }
+    
+    if (state.boss && b.color === BULLET_COLOR && 
+        b.x < state.boss!.x + state.boss!.width &&
+        b.x + b.width > state.boss!.x &&
+        b.y < state.boss!.y + state.boss!.height &&
+        b.y + b.height > state.boss!.y) {
+      bullets.splice(i, 1);
+      state.boss!.health -= 10;
+      if (state.boss!.health <= 0) {
+        state.score += 500;
+        onScoreChange(state.score);
+        powerups.push(new PowerUp(state.boss!.x + state.boss!.width / 2, state.boss!.y + state.boss!.height / 2, "vaporizer"));
+        state.boss = null;
+        state.bossRespawnTimer = 7200;
+      }
+      continue;
+    }
+
+    if (mode === "Shooter") {
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const e = enemies[j];
+        if (b.color === BULLET_COLOR && b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
+          bullets.splice(i, 1);
+          state.score += 10;
+          onScoreChange(state.score);
+          if (Math.random() < 0.2) {
+            const type = Math.random() < 0.5 ? "triple" : "health";
+            powerups.push(new PowerUp(e.x + e.width / 2, e.y + e.height / 2, type));
+          }
+          const speedMod = 1 + Math.min(Math.floor(state.score / 1000), 2);
+          enemies[j] = new Enemy(speedMod);
+          break;
+        }
+      }
+    }
+  }
+
+  // Player Collision with Bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    if (b.color === ENEMY_BULLET_COLOR && player.x < b.x + b.width && player.x + player.width > b.x && player.y < b.y + b.height && player.y + player.height > b.y) {
+      bullets.splice(i, 1);
+      player.health -= 1;
+      onHealthChange(player.health);
+      if (player.health <= 0) onGameOver();
+    }
+  }
+
+  // Powerup Collection (Shared)
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
     if (p.y > SCREEN_HEIGHT) { powerups.splice(i, 1); continue; }
@@ -252,7 +290,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, mode: 
   ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
   stars.forEach(s => s.draw(ctx));
-  player.draw(ctx);
+  player.draw(ctx, PLAYER_SKINS[state.playerSkin].color);
 
   if (mode === "Shooter") {
     bullets.forEach(b => b.draw(ctx));
@@ -287,7 +325,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, mode: 
       ctx.fillRect(0, state.sidewaysLaser.y, SCREEN_WIDTH, state.sidewaysLaser.height);
     }
   } else {
-    asteroids.forEach(a => a.draw(ctx));
+    asteroids.forEach(a => a.draw(ctx, ASTEROID_SKINS[state.asteroidSkin].color));
     powerups.forEach(p => p.draw(ctx));
   }
 
@@ -302,4 +340,17 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, mode: 
     ctx.lineTo(vX, SCREEN_HEIGHT);
     ctx.stroke();
   }
+
+  // Draw Notifications
+  state.notifications.forEach((n, i) => {
+    const alpha = n.duration / 180; // fade out
+    ctx.fillStyle = n.color === "red" ? `rgba(255, 0, 0, ${alpha})` : `rgba(255, 255, 255, ${alpha})`;
+    ctx.font = "bold 40px Arial";
+    ctx.textAlign = "center";
+    
+    // Flashing effect (every 10 frames)
+    if (Math.floor(Date.now() / 100) % 2 === 0) {
+      ctx.fillText(n.text, SCREEN_WIDTH / 2, 100 + i * 50);
+    }
+  });
 }

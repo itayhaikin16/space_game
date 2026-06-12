@@ -11,6 +11,24 @@ export const POWERUP_COLOR_HEALTH = "#00FF64";
 export const POWERUP_COLOR_VAPORIZER = "#FF00FF";
 export const ENEMY_BULLET_COLOR = "#FF00FF";
 
+export const PLAYER_SKINS = {
+  default: { name: "Default", color: "#22c55e", price: 0 },
+  crimson: { name: "Crimson", color: "#ef4444", price: 50 },
+  cobalt: { name: "Cobalt", color: "#3b82f6", price: 50 },
+  gold: { name: "Gold", color: "#eab308", price: 150 },
+} as const;
+
+export type PlayerSkinKey = keyof typeof PLAYER_SKINS;
+
+export const ASTEROID_SKINS = {
+  default: { name: "Default", color: "#71717a", price: 0 },
+  ice: { name: "Ice", color: "#a5f3fc", price: 50 },
+  magma: { name: "Magma", color: "#f97316", price: 50 },
+  emerald: { name: "Emerald", color: "#10b981", price: 150 },
+} as const;
+
+export type AsteroidSkinKey = keyof typeof ASTEROID_SKINS;
+
 export class Player {
   x: number;
   y: number;
@@ -40,8 +58,8 @@ export class Player {
     }
   }
 
-  draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = PLAYER_COLOR;
+  draw(ctx: CanvasRenderingContext2D, skinColor = PLAYER_COLOR) {
+    ctx.fillStyle = skinColor;
     ctx.beginPath();
     ctx.moveTo(this.x + 25, this.y);
     ctx.lineTo(this.x + 5, this.y + 35);
@@ -301,11 +319,11 @@ export class Asteroid {
     this.rotation += this.rotationSpeed;
   }
 
-  draw(ctx: CanvasRenderingContext2D) {
+  draw(ctx: CanvasRenderingContext2D, skinColor = "#8B4513") {
     ctx.save();
     ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
     ctx.rotate(this.rotation);
-    ctx.fillStyle = "#8B4513"; 
+    ctx.fillStyle = skinColor; 
     ctx.strokeStyle = "#5D2E0D";
     ctx.lineWidth = 2;
     
