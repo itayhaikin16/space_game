@@ -36,15 +36,28 @@ export default function Game() {
   const [username, setUsername] = useState("");
 
   // Shop State
-  const [coins, setCoins] = useState(() => Number(localStorage.getItem("space_game_coins") || "0"));
-  const [ownedSkins, setOwnedSkins] = useState<string[]>(() => JSON.parse(localStorage.getItem("space_game_owned_skins") || '["default"]'));
-  const [playerSkin, setPlayerSkin] = useState<PlayerSkinKey>(() => (localStorage.getItem("space_game_player_skin") as PlayerSkinKey) || "default");
-  const [asteroidSkin, setAsteroidSkin] = useState<AsteroidSkinKey>(() => (localStorage.getItem("space_game_asteroid_skin") as AsteroidSkinKey) || "default");
+  const [coins, setCoins] = useState(0);
+  const [ownedSkins, setOwnedSkins] = useState<string[]>(["default"]);
+  const [playerSkin, setPlayerSkin] = useState<PlayerSkinKey>("default");
+  const [asteroidSkin, setAsteroidSkin] = useState<AsteroidSkinKey>("default");
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [shopTab, setShopTab] = useState<"player" | "asteroid">("player");
 
   const keys = useRef<Record<string, boolean>>({});
   const gameState = useRef<GameState>(initGameState());
+
+  useEffect(() => {
+    // Load from localStorage on mount
+    const savedCoins = localStorage.getItem("space_game_coins");
+    const savedOwnedSkins = localStorage.getItem("space_game_owned_skins");
+    const savedPlayerSkin = localStorage.getItem("space_game_player_skin");
+    const savedAsteroidSkin = localStorage.getItem("space_game_asteroid_skin");
+
+    if (savedCoins) setCoins(Number(savedCoins));
+    if (savedOwnedSkins) setOwnedSkins(JSON.parse(savedOwnedSkins));
+    if (savedPlayerSkin) setPlayerSkin(savedPlayerSkin as PlayerSkinKey);
+    if (savedAsteroidSkin) setAsteroidSkin(savedAsteroidSkin as AsteroidSkinKey);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("space_game_coins", coins.toString());
